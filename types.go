@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -53,4 +54,22 @@ func NewAccount(email, password string) (*Account, error) {
 		Number:            int64(rand.Intn(1000000000)),
 		CreatedAt:         time.Now().UTC(),
 	}, nil
+}
+
+func (a *Account) ChangePassword(password, newPassword string) (string, error) {
+	//check if old password is correct
+	if !a.ValidatePassword(password) {
+		return "", fmt.Errorf("not authenticated")
+	}
+
+	encrptp, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	password = string(encrptp)
+	return password, err
+}
+
+func (a *Account) validateEmail(email string) (*Account, error) {
+	panic("unimplemented")
 }

@@ -13,14 +13,38 @@ import (
 type Storage interface {
 	CreateAccount(*Account) error
 	DeleteAccount(int) error
+	UpdateAccount(*Account) (*Account, error)
+	Transfer(*Account, int64) (*Account, error)
 	GetAccounts() ([]*Account, error)
 	GetAccountByID(int) (*Account, error)
 	GetAccountByNumber(int) (*Account, error)
-	UpdateAccount(*Account) (*Account, error)
 }
 
 type PostgresStore struct {
 	db *sql.DB
+}
+
+// UpdateAccount implements Storage.
+func (s *PostgresStore) UpdateAccount(acc *Account) (*Account, error) {
+	query := `UPDATE account SET id, email, username, number, encrypted_password, balance, created_at = $1, $2, $3, $4, $5, $6, $7 where id == $1`
+
+	rows, err := s.db.Query(
+		query,
+		acc.ID,
+		acc.Email,
+		acc.Username,
+		acc.Number,
+		acc.EncryptedPassword,
+		acc.Balance,
+		acc.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		return scanIntoAccount(rows)
+	}
+	return nil, fmt.Errorf("couldn't update account", acc)
 }
 
 func NewPostgresStore() (*PostgresStore, error) {
@@ -79,39 +103,22 @@ func (s *PostgresStore) CreateAccount(acc *Account) error {
 	return nil
 }
 
-func (s *PostgresStore) UpdateAcount(acc *Account) (*Account, error) {
-	query := `UPDATE account SET id, email, username, number, encrypted_password, balance, created_at = $1, $2, $3, $4, $5, $6, $7 where id == $1`
+func (s *PostgresStore) Transfer(acc *Account, amount int64) (*Account, error) {
+	query := `UPDATE account SET balance = $1 WHERE id = $2`
+	newAmount := acc.Balance + amount
 
-	rows, err := s.db.Query(
-		query,
-		acc.ID,
-		acc.Email,
-		acc.Username,
-		acc.Number,
-		acc.EncryptedPassword,
-		acc.Balance,
-		acc.CreatedAt,
-	)
+	_, err := s.db.Exec(query, newAmount, acc.ID)
 	if err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		return scanIntoAccount(rows)
+
+	updatedAccount, err := s.GetAccountByID(acc.ID)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("couldn't update account", acc)
+
+	return updatedAccount, nil
 }
-
-// func (s *PostgresStore) updateUsername(username string) error {
-// 	query := `UPDATE account SET encrypted_password = $1, where id == $2`
-
-// 	_, err := s.db.Query(
-// 		query, username,
-// 	)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
 
 func (s *PostgresStore) DeleteAccount(id int) error {
 
@@ -128,7 +135,7 @@ func (s *PostgresStore) GetAccountByNumber(number int) (*Account, error) {
 	for rows.Next() {
 		return scanIntoAccount(rows)
 	}
-	return nil, fmt.Errorf("accont with number [%d] not found", number)
+	return nil, fmt.Errorf("account with number [%d] not found", number)
 
 }
 

@@ -54,12 +54,13 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	//fetxh the account from db
+	//fetch the account from db
 	acc, err := s.store.GetAccountByNumber(int(req.Number))
 	if err != nil {
 		return err
 	}
 
+	//if its an incorrect password return error
 	if !acc.ValidatePassword(req.Password) {
 		return fmt.Errorf("not authenticated")
 	}
@@ -102,8 +103,6 @@ func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			return err
 		}
-
-		// resp, err = s.store.UpdateAccount()
 		return WriteJSON(w, http.StatusOK, account)
 	}
 
@@ -116,11 +115,16 @@ func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request)
 
 // function for updating user profile
 func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != "POST" {
+		return fmt.Errorf("method not allowed %s", r.Method)
+	}
+	//initialize a new account to be stored in memory
 	req := new(Account)
+	//decode the request
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		return err
 	}
-
+	// if there are no errors pass the req as a parameter for the UpdateAccount() fxn
 	updateAcc, err := s.store.UpdateAccount(req)
 	if err != nil {
 		return err
@@ -130,12 +134,28 @@ func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) 
 
 // transfer from account to account
 func (s *APIServer) handleTransferAccount(w http.ResponseWriter, r *http.Request) error {
-	transferReq := new(TransferRequest)
-	if err := json.NewDecoder(r.Body).Decode(transferReq); err != nil {
+	if r.Method != "POST" {
+		return fmt.Errorf("method not allowed %s", r.Method)
+	}
+	req := new(TransferRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		return err
 	}
 	defer r.Body.Close()
-	return WriteJSON(w, http.StatusOK, transferReq)
+
+	//find account to be sent money by number
+	acc, err := s.store.GetAccountByNumber(int(req.ToAccount))
+	if err != nil {
+		return err
+	}
+	//update the amount in the account
+	updatedAcc, err := s.store.Transfer(acc, int64(req.Amount))
+	if err != nil {
+		return err
+	}
+	return WriteJSON(w, http.StatusOK, updatedAcc)
+
+	// defer r.Body.Close()
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
@@ -227,6 +247,7 @@ func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 	}
 }
 
+// covert id to an int and return
 func getID(r *http.Request) (int, error) {
 	idStr := mux.Vars(r)["id"]
 	// convert int to string
