@@ -35,10 +35,12 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID), s.store))
 
 	//route to /transfer with handleTransferAccount function as the controller
-	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransferAccount))
+	//write a middleware to protect this route
+	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.HandleTransferAccount))
 
 	//route to /update with handleUpdateAccount function as the controller
-	router.HandleFunc("/update", makeHTTPHandleFunc(s.handleUpdateAccount))
+	//write a middleware to protect this route
+	router.HandleFunc("/update", makeHTTPHandleFunc(s.HandleUpdateAccount))
 
 	log.Println("JSON API server running on port: ", s.listenAddr)
 	http.ListenAndServe(s.listenAddr, router)
@@ -111,51 +113,6 @@ func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request)
 		return s.HandleDeleteAccount(w, r)
 	}
 	return fmt.Errorf("method not allowed %s", r.Method)
-}
-
-// function for updating user profile
-func (s *APIServer) handleUpdateAccount(w http.ResponseWriter, r *http.Request) error {
-	if r.Method != "POST" {
-		return fmt.Errorf("method not allowed %s", r.Method)
-	}
-	//initialize a new account to be stored in memory
-	req := new(Account)
-	//decode the request
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
-		return err
-	}
-	// if there are no errors pass the req as a parameter for the UpdateAccount() fxn
-	updateAcc, err := s.store.UpdateAccount(req)
-	if err != nil {
-		return err
-	}
-	return WriteJSON(w, http.StatusOK, updateAcc)
-}
-
-// transfer from account to account
-func (s *APIServer) handleTransferAccount(w http.ResponseWriter, r *http.Request) error {
-	if r.Method != "POST" {
-		return fmt.Errorf("method not allowed %s", r.Method)
-	}
-	req := new(TransferRequest)
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
-		return err
-	}
-	defer r.Body.Close()
-
-	//find account to be sent money by number
-	acc, err := s.store.GetAccountByNumber(int(req.ToAccount))
-	if err != nil {
-		return err
-	}
-	//update the amount in the account
-	updatedAcc, err := s.store.Transfer(acc, int64(req.Amount))
-	if err != nil {
-		return err
-	}
-	return WriteJSON(w, http.StatusOK, updatedAcc)
-
-	// defer r.Body.Close()
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {

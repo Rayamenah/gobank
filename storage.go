@@ -4,17 +4,20 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Storage interface {
 	CreateAccount(*Account) error
 	DeleteAccount(int) error
 	UpdateAccount(*Account) (*Account, error)
-	Transfer(*Account, int64) (*Account, error)
+	TransferToAccount(int, int, int) (*Account, error)
 	GetAccounts() ([]*Account, error)
 	GetAccountByID(int) (*Account, error)
 	GetAccountByNumber(int) (*Account, error)
@@ -24,7 +27,6 @@ type PostgresStore struct {
 	db *sql.DB
 }
 
-// UpdateAccount implements Storage.
 func (s *PostgresStore) UpdateAccount(acc *Account) (*Account, error) {
 	query := `UPDATE account SET id, email, username, number, encrypted_password, balance, created_at = $1, $2, $3, $4, $5, $6, $7 where id == $1`
 
@@ -44,7 +46,7 @@ func (s *PostgresStore) UpdateAccount(acc *Account) (*Account, error) {
 	for rows.Next() {
 		return scanIntoAccount(rows)
 	}
-	return nil, fmt.Errorf("couldn't update account", acc)
+	return nil, err
 }
 
 func NewPostgresStore() (*PostgresStore, error) {
@@ -103,22 +105,59 @@ func (s *PostgresStore) CreateAccount(acc *Account) error {
 	return nil
 }
 
-func (s *PostgresStore) Transfer(acc *Account, amount int64) (*Account, error) {
-	query := `UPDATE account SET balance = $1 WHERE id = $2`
-	newAmount := acc.Balance + amount
+func NewAccount(email, password string) (*Account, error) {
+	encrptp, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	return &Account{
+		Email:             email,
+		EncryptedPassword: string(encrptp),
+		Number:            int64(rand.Intn(1000000000)),
+		CreatedAt:         time.Now().UTC(),
+	}, nil
+}
 
-	_, err := s.db.Exec(query, newAmount, acc.ID)
+func (s *PostgresStore) TransferToAccount(fromAcc, toAcc, amount int) (*Account, error) {
+
+	//subtract the amount from the user account
+	q := `UPDATE account SET balance = balance - $1 WHERE number = $2`
+	_, err := s.db.Exec(q, amount, fromAcc)
 	if err != nil {
 		return nil, err
 	}
 
-	updatedAccount, err := s.GetAccountByID(acc.ID)
+	query := `UPDATE account SET balance = balance + $1 WHERE number = $2`
+	_, err = s.db.Exec(query, amount, toAcc)
+	if err != nil {
+		return nil, err
+	}
+	//should probably find a way to write 2 queries in a single statement
+
+	//return the updated user balance
+	updatedAccount, err := s.GetAccountByNumber(int(toAcc))
 	if err != nil {
 		return nil, err
 	}
 
 	return updatedAccount, nil
 }
+
+// func (s *PostgresStore) Withdraw(acc *Account, amount int64) (*Account, error) {
+// 	query := `UPDATE account SET balance = $1 WHERE id = $2`
+// 	newAmount := acc.Balance - amount
+// 	_, err := s.db.Exec(query, newAmount, acc.ID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	updatedAccount, err := s.GetAccountByID(acc.ID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return updatedAccount, nil
+// }
 
 func (s *PostgresStore) DeleteAccount(id int) error {
 
